@@ -39,11 +39,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "`messages` must be a non-empty array." }, { status: 400 });
   }
 
+  // Optional per-user model override (chosen in the in-app settings panel).
+  const userModel = req.headers.get("x-nvidia-model")?.trim() || "";
+  if (userModel && !/^[A-Za-z0-9._/-]{1,128}$/.test(userModel)) {
+    return Response.json({ error: "Invalid model slug." }, { status: 400 });
+  }
+  const model = userModel || cfg.model;
+
   const client = new OpenAI({ apiKey, baseURL: cfg.baseURL });
 
   try {
     const stream = await client.chat.completions.create({
-      model: cfg.model,
+      model,
       messages: body.messages,
       temperature: typeof body.temperature === "number" ? body.temperature : 0.3,
       stream: true,
@@ -75,9 +82,20 @@ export async function POST(req: Request) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    // Common cause: wrong NVIDIA_MODEL slug or an invalid/rotated key.
+    const status = (err as { status?: number })?.status;
+    // Map the common upstream failures to something the user can act on.
+    let hint = "";
+    if (status === 404) {
+      hint =
+        ` The model "${model}" was not found on this endpoint — open the API key panel, ` +
+        `click "Load models", and pick one from the list.`;
+    } else if (status === 401 || status === 403) {
+      hint = " The API key was rejected — re-paste or rotate it in the API key panel.";
+    } else if (status === 429) {
+      hint = " Rate limit or quota exceeded for this key — wait a bit or use another key.";
+    }
     return Response.json(
-      { error: `Upstream Nemotron request failed: ${message}` },
+      { error: `Upstream Nemotron request failed: ${message}.${hint}` },
       { status: 502 },
     );
   }

@@ -9,7 +9,10 @@ import { persist, createJSONStorage, type StateStorage } from "zustand/middlewar
 
 interface SettingsState {
   apiKey: string;
+  /** Model slug override; empty = use the server's default. */
+  model: string;
   setApiKey: (key: string) => void;
+  setModel: (model: string) => void;
   clearApiKey: () => void;
 }
 
@@ -23,7 +26,9 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       apiKey: "",
+      model: "",
       setApiKey: (key) => set({ apiKey: key.trim() }),
+      setModel: (model) => set({ model: model.trim() }),
       clearApiKey: () => set({ apiKey: "" }),
     }),
     {
@@ -37,3 +42,5 @@ export const useSettings = create<SettingsState>()(
 
 /** Header used to carry the user's key to our own proxy route. */
 export const KEY_HEADER = "x-nvidia-key";
+/** Header used to carry the user's chosen model slug to our own proxy route. */
+export const MODEL_HEADER = "x-nvidia-model";

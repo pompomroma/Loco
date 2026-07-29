@@ -73,10 +73,11 @@ pnpm dev
 # open http://localhost:3000
 ```
 
-> **Verify the model slug.** `NVIDIA_MODEL` defaults to
-> `nvidia/llama-3.1-nemotron-ultra-253b-v1`. Confirm the exact id you want at
-> <https://build.nvidia.com/models> — slugs change between releases, and a wrong
-> slug shows up as an "Upstream Nemotron request failed" error.
+> **Seeing "Upstream Nemotron request failed: 404"?** The model slug doesn't
+> exist on the endpoint. Open the **API key** panel and click **Load models** —
+> it fetches the live list your key can access — then pick one and Save. (The
+> `NVIDIA_MODEL` env var is only a server-side default; a model picked in-app
+> takes precedence.)
 
 ---
 

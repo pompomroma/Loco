@@ -30,6 +30,7 @@ export default function Page() {
   const [health, setHealth] = useState<Health | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const userKey = useSettings((s) => s.apiKey);
+  const userModel = useSettings((s) => s.model);
 
   const order = useStore((s) => s.order);
   const activeId = useStore((s) => s.activeId);
@@ -231,9 +232,11 @@ export default function Page() {
               {workspace?.name ?? "No workspace"}
             </div>
             <div className="text-xs text-white/40">
-              {health?.model
-                ? `Nemotron · ${health.model}`
-                : "vibe programming"}
+              {userModel.trim()
+                ? `Nemotron · ${userModel.trim()}`
+                : health?.model
+                  ? `Nemotron · ${health.model}`
+                  : "vibe programming"}
             </div>
           </div>
           <div className="flex items-center gap-2">

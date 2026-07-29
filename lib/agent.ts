@@ -4,7 +4,7 @@ import type { AgentTurn, FileTree, UploadedFile, ChatMessage } from "./types";
 import { buildMessages, buildFixMessage, type ApiMessage } from "./prompt";
 import { parseAgentTurn, applyTurn, detectKind } from "./protocol";
 import { assemblePreview } from "./preview";
-import { useSettings, KEY_HEADER } from "./settings";
+import { useSettings, KEY_HEADER, MODEL_HEADER } from "./settings";
 
 const MAX_FIX_ITERATIONS = 4;
 const MAX_EMPTY_RETRIES = 2;
@@ -35,8 +35,9 @@ async function streamChat(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   // Bring-your-own-key: if the user saved a key in-app, send it to our proxy so
   // no .env configuration is needed. It goes only to this app's own server.
-  const userKey = useSettings.getState().apiKey.trim();
-  if (userKey) headers[KEY_HEADER] = userKey;
+  const { apiKey, model } = useSettings.getState();
+  if (apiKey.trim()) headers[KEY_HEADER] = apiKey.trim();
+  if (model.trim()) headers[MODEL_HEADER] = model.trim();
 
   const res = await fetch("/api/chat", {
     method: "POST",
