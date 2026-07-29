@@ -48,6 +48,17 @@ execution service; they are handled honestly rather than faked:
 
 ---
 
+## API key: two ways to provide it
+
+1. **In the app (easiest, no .env needed):** click **API key** in the top bar and
+   paste your `nvapi-…` key. It's stored only in your browser (localStorage) and
+   sent per-request to this app's own server proxy — never anywhere else, never
+   logged. Anyone with the key can spend your NVIDIA quota, so avoid shared
+   computers and rotate it at <https://build.nvidia.com> if it ever leaks.
+2. **Server-side env var (for a shared deployment):** set `NVIDIA_API_KEY` in
+   `.env.local` (locally) or in Vercel's Environment Variables. A key entered in
+   the app takes precedence over the env var.
+
 ## Run it locally
 
 Requirements: Node 18+ (Node 22 recommended).
@@ -56,13 +67,8 @@ Requirements: Node 18+ (Node 22 recommended).
 # 1. install
 pnpm install        # or: npm install
 
-# 2. configure your key (this file is gitignored — never commit it)
-cp .env.example .env.local
-#   then edit .env.local and set:
-#     NVIDIA_API_KEY=nvapi-...           # your key from https://build.nvidia.com
-#     NVIDIA_MODEL=...                   # verify the exact Nemotron slug in the catalog
-
-# 3. start
+# 2. start — no key setup required; paste your key in the app's "API key" box.
+#    (Optionally: cp .env.example .env.local and set NVIDIA_API_KEY instead.)
 pnpm dev
 # open http://localhost:3000
 ```
@@ -80,10 +86,12 @@ pnpm dev
    `claude/vibe-ai-file-handling-0opc9j`).
 2. In Vercel: **Add New → Project → Import** this repository. Framework is
    auto-detected as Next.js; no build settings needed.
-3. Add **Environment Variables** (Project → Settings → Environment Variables):
+3. (Optional) Add **Environment Variables** (Project → Settings → Environment
+   Variables) if you want a shared server key so visitors don't need their own:
    - `NVIDIA_API_KEY` = your key
    - `NVIDIA_BASE_URL` = `https://integrate.api.nvidia.com/v1`
    - `NVIDIA_MODEL` = your verified Nemotron slug
+   Without these, every visitor pastes their own key via the in-app box.
 4. **Deploy.** Vercel gives you a public `https://<project>.vercel.app` URL — that
    is your shareable "full AI access" link.
 

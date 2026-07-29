@@ -11,14 +11,18 @@ interface ChatRequest {
 }
 
 // Streaming proxy to NVIDIA's OpenAI-compatible Nemotron endpoint.
-// The API key stays on the server and is never returned to the browser.
+// Key resolution: a per-request user key (entered in the in-app settings box,
+// carried in the x-nvidia-key header) takes precedence; the server env var is
+// the fallback. Neither is ever logged or echoed back to the browser.
 export async function POST(req: Request) {
   const cfg = getNvidiaConfig();
-  if (!cfg.apiKey) {
+  const userKey = req.headers.get("x-nvidia-key")?.trim() || "";
+  const apiKey = userKey || cfg.apiKey;
+  if (!apiKey) {
     return Response.json(
       {
         error:
-          "NVIDIA_API_KEY is not configured on the server. Set it in .env.local (local) or in your Vercel project's Environment Variables.",
+          "No NVIDIA API key available. Paste your key in the app's \"API key\" settings (top bar), or set NVIDIA_API_KEY on the server.",
       },
       { status: 503 },
     );
@@ -35,7 +39,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "`messages` must be a non-empty array." }, { status: 400 });
   }
 
-  const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+  const client = new OpenAI({ apiKey, baseURL: cfg.baseURL });
 
   try {
     const stream = await client.chat.completions.create({

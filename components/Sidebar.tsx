@@ -128,7 +128,7 @@ export default function Sidebar() {
 
       <div className="border-t border-white/10 p-3 text-[11px] leading-snug text-white/35">
         Free to use · no usage limits in-app. Upstream Nemotron usage is billed to
-        the server&apos;s API key.
+        whichever API key is in use (yours, if saved via the top bar).
       </div>
     </aside>
   );

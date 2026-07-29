@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cpu, Circle, AlertTriangle } from "lucide-react";
+import { Cpu, Circle, AlertTriangle, KeyRound } from "lucide-react";
 import { useStore, uid } from "@/lib/store";
+import { useSettings } from "@/lib/settings";
 import type { ChatMessage, UploadedFile } from "@/lib/types";
 import { runAgent, type Phase } from "@/lib/agent";
 import { visibleProse } from "@/lib/protocol";
@@ -13,6 +14,7 @@ import ChatPanel from "@/components/ChatPanel";
 import Composer from "@/components/Composer";
 import PreviewPanel from "@/components/PreviewPanel";
 import SpecCard from "@/components/SpecCard";
+import KeySettings from "@/components/KeySettings";
 
 interface Health {
   ok: boolean;
@@ -24,8 +26,10 @@ export default function Page() {
   const [mounted, setMounted] = useState(false);
   const [running, setRunning] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  const [keyOpen, setKeyOpen] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const userKey = useSettings((s) => s.apiKey);
 
   const order = useStore((s) => s.order);
   const activeId = useStore((s) => s.activeId);
@@ -204,6 +208,9 @@ export default function Page() {
     }
   }, [running, drainQueue]);
 
+  // Generation works if either the server has a key or the user saved one here.
+  const online = Boolean(health?.ok || userKey.trim());
+
   if (!mounted) {
     return (
       <div className="grid h-screen place-items-center bg-[#0a0a0f] text-white/40">
@@ -233,36 +240,62 @@ export default function Page() {
             <span
               className="flex items-center gap-1 text-xs text-white/40"
               title={
-                health?.ok
-                  ? "Server connected to Nemotron"
-                  : "NVIDIA_API_KEY not set on the server"
+                userKey.trim()
+                  ? "Using the key saved in this browser"
+                  : health?.ok
+                    ? "Using the server's configured key"
+                    : "No key — add yours via the API key button"
               }
             >
               <Circle
                 className={`h-2.5 w-2.5 ${
-                  health?.ok ? "fill-emerald-400 text-emerald-400" : "fill-red-400 text-red-400"
+                  online ? "fill-emerald-400 text-emerald-400" : "fill-red-400 text-red-400"
                 }`}
               />
-              {health?.ok ? "online" : "no key"}
+              {userKey.trim() ? "online · your key" : health?.ok ? "online" : "no key"}
             </span>
             <button
-              onClick={() => setSpecOpen((v) => !v)}
+              onClick={() => {
+                setKeyOpen((v) => !v);
+                setSpecOpen(false);
+              }}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs hover:bg-white/10 ${
+                online
+                  ? "border-white/10 text-white/70"
+                  : "border-amber-400/40 text-amber-300"
+              }`}
+            >
+              <KeyRound className="h-3.5 w-3.5" /> API key
+            </button>
+            <button
+              onClick={() => {
+                setSpecOpen((v) => !v);
+                setKeyOpen(false);
+              }}
               className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"
             >
               <Cpu className="h-3.5 w-3.5" /> Spec card
             </button>
           </div>
           {specOpen && <SpecCard onClose={() => setSpecOpen(false)} />}
+          {keyOpen && <KeySettings onClose={() => setKeyOpen(false)} />}
         </div>
 
-        {health && !health.ok && (
+        {health && !online && (
           <div className="flex items-start gap-2 border-b border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs text-amber-200">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              The server has no <span className="mono">NVIDIA_API_KEY</span>. Add it
-              to <span className="mono">.env.local</span> (local) or your Vercel
-              project&apos;s Environment Variables, then reload. The UI works, but
-              generation will fail until a key is set.
+              No API key yet. Click{" "}
+              <button
+                onClick={() => setKeyOpen(true)}
+                className="font-semibold underline underline-offset-2 hover:text-amber-100"
+              >
+                API key
+              </button>{" "}
+              in the top bar and paste your <span className="mono">nvapi-…</span>{" "}
+              key — no .env file needed. (Server admins can alternatively set{" "}
+              <span className="mono">NVIDIA_API_KEY</span> as an environment
+              variable.)
             </span>
           </div>
         )}
