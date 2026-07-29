@@ -26,13 +26,15 @@ right code builds automatically. Your permanent URL is the
 `https://<project>.vercel.app` address Vercel shows when the build finishes —
 it stays up as long as the Vercel project exists, no Codespace needed.
 
-**Keep it updated automatically:** after the first deploy, add three repository
-secrets on GitHub (Settings → Secrets and variables → Actions): `VERCEL_TOKEN`
-(vercel.com/account/settings/tokens), plus `VERCEL_ORG_ID` and
-`VERCEL_PROJECT_ID` (both shown in the Vercel project's Settings → General).
-From then on, every push redeploys your permanent URL via
-`.github/workflows/deploy.yml` — until the secrets exist, that workflow simply
-prints a setup notice and stays green.
+**Fully automated alternative (one secret):** create a token at
+[vercel.com/account/settings/tokens](https://vercel.com/account/settings/tokens)
+and add it as the `VERCEL_TOKEN` repository secret on GitHub (Settings →
+Secrets and variables → Actions). The `Deploy to Vercel` workflow then does
+everything on the next push or manual run — creates the Vercel project,
+builds, deploys to production, and prints your permanent URL in the run
+summary. (`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` secrets are optional — set them
+only to pin an existing project.) Until the token exists, the workflow prints
+a setup notice and stays green.
 
 Honest note: on Vercel, background jobs are best-effort within serverless time
 limits (see the support matrix below) — the Codespace remains the full-power

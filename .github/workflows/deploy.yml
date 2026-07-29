@@ -4,21 +4,20 @@ on:
   push:
     branches:
       - claude/vibe-ai-file-handling-0opc9j
+  workflow_dispatch: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check for Vercel secrets
+      - name: Check for Vercel token
         id: gate
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+          if [ -z "$VERCEL_TOKEN" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Vercel auto-deploy is not set up yet. Create the Vercel project once (see README 'Get your permanent link'), then add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID as repository secrets — every push will then update your permanent URL automatically."
+            echo "::notice::Vercel auto-deploy is not set up yet. Create a token at vercel.com/account/settings/tokens and add it as the VERCEL_TOKEN repository secret (Settings -> Secrets and variables -> Actions). The next run will create the Vercel project automatically and print your permanent URL."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -37,10 +36,27 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # Optional. When set (with VERCEL_PROJECT_ID), skips auto-linking.
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           npm i -g vercel@latest
+          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            # First run: create/link the Vercel project under the token's
+            # account (project name derives from the repo directory: "loco").
+            unset VERCEL_ORG_ID VERCEL_PROJECT_ID
+            vercel link --yes --token="$VERCEL_TOKEN"
+          fi
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
-          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          URL=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "PERMANENT URL: $URL"
+          {
+            echo "## Your permanent Loco link"
+            echo ""
+            echo "**$URL**"
+            echo ""
+            echo "This URL stays up independent of any Codespace. Production"
+            echo "alias domains (\"<project>.vercel.app\") are listed in the"
+            echo "Vercel dashboard under the project's Domains tab."
+          } >> "$GITHUB_STEP_SUMMARY"
