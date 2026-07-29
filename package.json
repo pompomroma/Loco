@@ -4,9 +4,9 @@
   "private": true,
   "description": "Loco — a web-based AI companion for vibe programming.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/print-url.mjs && next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/print-url.mjs && next start",
     "lint": "next lint"
   },
   "dependencies": {

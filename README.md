@@ -10,6 +10,36 @@ It runs on **NVIDIA's Nemotron** model through the OpenAI-compatible API.
 
 ---
 
+## Get your permanent link
+
+A Codespace URL (`…app.github.dev`) is temporary by design: it stops working
+when the Codespace sleeps, changes per Codespace, and needs your GitHub login.
+For a link that is **always accessible**, deploy once to Vercel (free tier is
+fine, ~2 minutes, zero configuration — no env vars are required because users
+paste their NVIDIA key in the app itself):
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fpompomroma%2FLoco)
+
+Or manually: [vercel.com/new](https://vercel.com/new) → **Import** this
+repository → **Deploy**. The work branch is the repo's default branch, so the
+right code builds automatically. Your permanent URL is the
+`https://<project>.vercel.app` address Vercel shows when the build finishes —
+it stays up as long as the Vercel project exists, no Codespace needed.
+
+**Keep it updated automatically:** after the first deploy, add three repository
+secrets on GitHub (Settings → Secrets and variables → Actions): `VERCEL_TOKEN`
+(vercel.com/account/settings/tokens), plus `VERCEL_ORG_ID` and
+`VERCEL_PROJECT_ID` (both shown in the Vercel project's Settings → General).
+From then on, every push redeploys your permanent URL via
+`.github/workflows/deploy.yml` — until the secrets exist, that workflow simply
+prints a setup notice and stays green.
+
+Honest note: on Vercel, background jobs are best-effort within serverless time
+limits (see the support matrix below) — the Codespace remains the full-power
+host, while the Vercel URL is the always-reachable one.
+
+---
+
 ## What it does today (MVP)
 
 - **Workspaces / session slots** — add, name, switch, and delete independent
