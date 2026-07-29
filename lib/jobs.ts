@@ -20,7 +20,7 @@ import {
 } from "./prompt";
 import type { UploadedFile } from "./types";
 import { validateProduct } from "./serverValidate";
-import { getNvidiaConfig } from "./nvidia";
+import { getNvidiaConfig, getGenParams, reasoningSystemLine } from "./nvidia";
 
 const MAX_FIX_ITERATIONS = 3;
 const MAX_EMPTY_RETRIES = 2;
@@ -224,35 +224,76 @@ function publicJob(job: JobInternal): Job {
 
 // ---- the runner -------------------------------------------------------------
 
+function isMaxTokensRejection(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  const msg = err instanceof Error ? err.message : String(err);
+  return status === 400 && /max_?tokens|maximum.*tokens|length/i.test(msg);
+}
+
+function isTransient(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status != null) return status >= 500 || status === 429;
+  // No HTTP status → network-level failure (reset, DNS, timeout).
+  return true;
+}
+
 async function streamCompletion(
   jobId: string,
   messages: ApiMessage[],
   signal: AbortSignal,
 ): Promise<string> {
   const cfg = getNvidiaConfig();
+  const gen = getGenParams();
   const secret = secrets.get(jobId);
   if (!secret) throw new Error("Job credentials are gone (server restarted).");
   const client = new OpenAI({ apiKey: secret.apiKey, baseURL: cfg.baseURL });
-  const stream = await client.chat.completions.create(
-    {
-      model: secret.model,
-      messages,
-      temperature: 0.3,
-      stream: true,
-    },
-    { signal },
-  );
-  let full = "";
-  const job = jobs.get(jobId);
-  for await (const chunk of stream) {
-    const delta = chunk.choices?.[0]?.delta?.content;
-    if (delta) {
-      full += delta;
-      buffers.set(jobId, full);
-      if (job) job.updatedAt = Date.now(); // heartbeat for stall detection
+
+  const finalMessages: ApiMessage[] = gen.reasoning
+    ? [{ role: "system", content: reasoningSystemLine(gen.reasoning) }, ...messages]
+    : messages;
+
+  // Attempt 1: full output budget. If the model's ceiling is lower (400 on
+  // max_tokens), retry without it so the model's own maximum applies. One
+  // extra retry for transient upstream failures (5xx/429/network).
+  let includeMaxTokens = true;
+  let transientRetried = false;
+  for (;;) {
+    try {
+      const stream = await client.chat.completions.create(
+        {
+          model: secret.model,
+          messages: finalMessages,
+          temperature: gen.temperature,
+          ...(includeMaxTokens ? { max_tokens: gen.maxTokens } : {}),
+          stream: true,
+        },
+        { signal },
+      );
+      let full = "";
+      const job = jobs.get(jobId);
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          full += delta;
+          buffers.set(jobId, full);
+          if (job) job.updatedAt = Date.now(); // heartbeat for stall detection
+        }
+      }
+      return full;
+    } catch (err) {
+      if (signal.aborted) throw err;
+      if (includeMaxTokens && isMaxTokensRejection(err)) {
+        includeMaxTokens = false;
+        continue;
+      }
+      if (!transientRetried && isTransient(err)) {
+        transientRetried = true;
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      throw err;
     }
   }
-  return full;
 }
 
 async function generateTurn(

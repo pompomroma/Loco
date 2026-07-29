@@ -5,7 +5,7 @@ import type { Job, JobResult } from "./jobs";
 import { assemblePreview } from "./preview";
 import { useSettings, KEY_HEADER, MODEL_HEADER } from "./settings";
 
-const POLL_MS = 2000;
+const POLL_MS = 1000;
 const STALL_MS = 90_000;
 
 export type Phase = "generating" | "building" | "fixing" | "done" | "error";

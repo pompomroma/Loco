@@ -38,6 +38,23 @@ It runs on **NVIDIA's Nemotron** model through the OpenAI-compatible API.
 - **No in-app usage limits or paywall.** Upstream Nemotron usage is billed to the
   server's API key.
 
+### Performance defaults (maxed out of the box)
+
+The app ships with every app-side performance lever at its maximum useful
+setting: an **8192-token output budget** per turn (with an automatic retry
+without the cap if a model's own ceiling is lower — so results are never
+artificially truncated), **temperature 0.2** for precise code, **1-second live
+progress polling**, and a transient-failure retry in the background runner.
+Override via `NVIDIA_MAX_TOKENS` / `NVIDIA_TEMPERATURE` if you want different
+behavior.
+
+Two honest notes: the model's raw generation speed and capability are set by
+NVIDIA's serving and the model you pick — no app setting can raise them. And
+the one real quality↔speed dial, Llama-Nemotron's reasoning mode
+(`NVIDIA_REASONING=on|off`), is a trade-off: "on" thinks harder and responds
+slower, "off" is fastest. It defaults to the model's own behavior because both
+maxima can't be had at once.
+
 ### Background jobs: what to expect where
 
 - **Persistent Node server** (GitHub Codespace, VPS, `pnpm start`/`pnpm dev`

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { getNvidiaConfig } from "@/lib/nvidia";
+import { getNvidiaConfig, getGenParams, reasoningSystemLine } from "@/lib/nvidia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,14 +47,42 @@ export async function POST(req: Request) {
   const model = userModel || cfg.model;
 
   const client = new OpenAI({ apiKey, baseURL: cfg.baseURL });
+  const gen = getGenParams();
+  const messages = gen.reasoning
+    ? [
+        { role: "system" as const, content: reasoningSystemLine(gen.reasoning) },
+        ...body.messages,
+      ]
+    : body.messages;
 
   try {
-    const stream = await client.chat.completions.create({
-      model,
-      messages: body.messages,
-      temperature: typeof body.temperature === "number" ? body.temperature : 0.3,
-      stream: true,
-    });
+    let stream;
+    try {
+      stream = await client.chat.completions.create({
+        model,
+        messages,
+        temperature:
+          typeof body.temperature === "number" ? body.temperature : gen.temperature,
+        max_tokens: gen.maxTokens,
+        stream: true,
+      });
+    } catch (err: unknown) {
+      // If this model's output ceiling is below our budget, retry without
+      // max_tokens so the model's own maximum applies.
+      const status = (err as { status?: number })?.status;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (status === 400 && /max_?tokens|maximum.*tokens|length/i.test(msg)) {
+        stream = await client.chat.completions.create({
+          model,
+          messages,
+          temperature:
+            typeof body.temperature === "number" ? body.temperature : gen.temperature,
+          stream: true,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream<Uint8Array>({

@@ -33,6 +33,9 @@ export const SPEC_CARD: SpecCard = {
   stats: [
     { label: "TOPS", value: "20", hint: "Branding stat — models have no real TOPS (that's a chip metric)." },
     { label: "SWE-bench", value: "+11 pts", hint: "Branding stat — real SWE-bench scores come from running the benchmark, not from a config." },
+    { label: "Max output", value: "8192 tok", hint: "Default output budget per turn — uncapped to the model's own ceiling if it's lower. Real setting (NVIDIA_MAX_TOKENS)." },
+    { label: "Sampling", value: "temp 0.2", hint: "Low temperature for precise, deterministic code. Real setting (NVIDIA_TEMPERATURE)." },
+    { label: "Feedback", value: "1s poll", hint: "Background job progress streams to the UI every second." },
     { label: "Fix passes", value: "Auto ×3", hint: "Server-side validate-and-fix passes per request, plus a runtime check in your browser." },
     { label: "Background", value: "Always on", hint: "Generation runs server-side and keeps going when you close the tab." },
     { label: "Languages", value: "∞", hint: "No language whitelist — generates in whatever the task needs." },
