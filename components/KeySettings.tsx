@@ -7,7 +7,7 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  ShieldAlert,
+  Info,
   Check,
   RefreshCw,
   Cpu,
@@ -185,14 +185,18 @@ export default function KeySettings({ onClose }: { onClose: () => void }) {
         </span>
       </div>
 
-      <div className="mt-3 flex gap-2 rounded-lg bg-amber-400/10 p-2 text-[11px] leading-snug text-amber-200/90">
-        <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div className="mt-3 flex gap-2 rounded-lg bg-white/[0.04] p-2 text-[11px] leading-snug text-white/60">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/40" />
         <span>
-          Getting a <b>404</b>? That means the model slug doesn&apos;t exist on the
-          endpoint — click <b>Load models</b> and pick a real one. Your key is
-          stored only in this browser, sent only to this app&apos;s own server, and
-          never logged. Rotate it at build.nvidia.com if it ever leaks.
+          Tip: if a request ever fails with a <b>404</b>, the model slug
+          doesn&apos;t exist on the endpoint — click <b>Load models</b> and pick
+          one from the list. (This is just guidance, not an error.)
         </span>
+      </div>
+
+      <div className="mt-2 text-[11px] leading-snug text-white/35">
+        Your key is stored only in this browser, sent only to this app&apos;s own
+        server, and never logged. Rotate it at build.nvidia.com if it ever leaks.
       </div>
     </div>
   );
