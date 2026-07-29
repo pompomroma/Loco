@@ -52,6 +52,9 @@ interface StoreState {
   snapshotVersion: (wsId: string, label: string) => void;
   restoreVersion: (wsId: string, versionId: string) => void;
 
+  // background job tracking
+  setActiveJob: (wsId: string, jobId: string | null, messageId: string | null) => void;
+
   // stacked request queue
   enqueue: (wsId: string, request: string) => void;
   dequeue: (wsId: string) => string | null;
@@ -187,6 +190,23 @@ export const useStore = create<StoreState>()(
                 ...ws,
                 files: { ...v.files },
                 kind: v.kind,
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }),
+
+      setActiveJob: (wsId, jobId, messageId) =>
+        set((s) => {
+          const ws = s.workspaces[wsId];
+          if (!ws) return s;
+          return {
+            workspaces: {
+              ...s.workspaces,
+              [wsId]: {
+                ...ws,
+                activeJobId: jobId,
+                activeJobMessageId: messageId,
                 updatedAt: Date.now(),
               },
             },

@@ -22,17 +22,18 @@ const PROBE = `<script>(function(){
   parent.postMessage({__loco:true,kind:'ready'},'*');
 })();</script>`;
 
-function normalize(p: string): string {
+export function normalizeAssetPath(p: string): string {
   return p.trim().replace(/^\.?\//, "").replace(/^\/+/, "");
 }
 
-/** Resolve a referenced asset path (from an entry file) to a tree key. */
-function resolveRef(ref: string, entryPath: string, files: FileTree): string | null {
+/** Resolve a referenced asset path (from an entry file) to a tree key.
+ *  Shared by the browser preview assembler and the server-side validator. */
+export function resolveRef(ref: string, entryPath: string, files: FileTree): string | null {
   if (/^(https?:|data:|#|mailto:)/i.test(ref)) return null;
-  const clean = normalize(ref.split("?")[0].split("#")[0]);
+  const clean = normalizeAssetPath(ref.split("?")[0].split("#")[0]);
   if (files[clean] != null) return clean;
   const dir = entryPath.includes("/") ? entryPath.slice(0, entryPath.lastIndexOf("/") + 1) : "";
-  const joined = normalize(dir + clean);
+  const joined = normalizeAssetPath(dir + clean);
   if (files[joined] != null) return joined;
   const base = clean.split("/").pop();
   const hit = Object.keys(files).find((k) => k.split("/").pop() === base);

@@ -5,8 +5,18 @@ import { Cpu, Circle, AlertTriangle, KeyRound } from "lucide-react";
 import { useStore, uid } from "@/lib/store";
 import { useSettings } from "@/lib/settings";
 import type { ChatMessage, UploadedFile } from "@/lib/types";
-import { runAgent, type Phase } from "@/lib/agent";
-import { visibleProse } from "@/lib/protocol";
+import {
+  createGenerationJob,
+  watchJob,
+  fetchJob,
+  collectPreviewErrors,
+  composeRuntimeFixRequest,
+} from "@/lib/agent";
+import {
+  syncWorkspaceJob,
+  mergeFinishedJob,
+  recordFailedJob,
+} from "@/lib/jobSync";
 import { readUploads } from "@/lib/uploads";
 import { downloadZip, downloadFile } from "@/lib/download";
 import Sidebar from "@/components/Sidebar";
@@ -24,17 +34,21 @@ interface Health {
 
 export default function Page() {
   const [mounted, setMounted] = useState(false);
-  const [running, setRunning] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
   const [keyOpen, setKeyOpen] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const abortMap = useRef(new Map<string, AbortController>());
   const userKey = useSettings((s) => s.apiKey);
   const userModel = useSettings((s) => s.model);
 
   const order = useStore((s) => s.order);
   const activeId = useStore((s) => s.activeId);
   const workspace = useStore((s) => (s.activeId ? s.workspaces[s.activeId] : null));
+
+  // "Running" is per-workspace: true while the displayed workspace has a live
+  // background job (or a job is being created right now).
+  const running = busy || Boolean(workspace?.activeJobId);
 
   useEffect(() => setMounted(true), []);
 
@@ -51,163 +65,206 @@ export default function Page() {
       .catch(() => setHealth({ ok: false, model: "", hasWorker: false }));
   }, []);
 
-  const runRequest = useCallback(
-    async (wsId: string, request: string, uploaded: UploadedFile[]) => {
-      const s = useStore.getState();
-      const ws = s.workspaces[wsId];
-      if (!ws) return;
-
-      const history = ws.messages;
-
-      s.addMessage(wsId, {
-        id: uid("m_"),
-        role: "user",
-        content: request,
-        attachments: uploaded.map((a) => ({
-          name: a.name,
-          mime: a.mime,
-          size: a.size,
-          isText: a.isText,
-          note: a.note,
-        })),
-        createdAt: Date.now(),
-      } as ChatMessage);
-
-      const assistantId = uid("m_");
-      s.addMessage(wsId, {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        status: "streaming",
-        createdAt: Date.now(),
+  // Watch a background job, mirroring progress into its assistant message.
+  // On completion: merge results; if the tab is still open and the product is
+  // a web app, run the in-browser runtime check and chain ONE fix job.
+  async function attachToJob(
+    wsId: string,
+    jobId: string,
+    assistantId: string,
+    allowRuntimeFix: boolean,
+  ): Promise<void> {
+    const ac = new AbortController();
+    abortMap.current.set(wsId, ac);
+    let buffer = "";
+    try {
+      await watchJob(jobId, {
+        signal: ac.signal,
+        onToken: (d) => {
+          buffer += d;
+          useStore.getState().updateMessage(wsId, assistantId, { content: buffer });
+        },
+        onPhase: (p, detail) => {
+          const status =
+            p === "fixing" ? "fixing" : p === "done" ? "done" : p === "error" ? "error" : "streaming";
+          useStore.getState().updateMessage(wsId, assistantId, {
+            status,
+            statusDetail: detail
+              ? `${detail} Running in background — safe to close this tab.`
+              : "Running in background — safe to close this tab.",
+          });
+        },
       });
 
-      const ac = new AbortController();
-      abortRef.current = ac;
-      let buffer = "";
-      let phase: Phase = "generating";
-
-      try {
-        const result = await runAgent({
-          history,
-          request,
-          product: ws.files,
-          attachments: uploaded,
-          callbacks: {
-            signal: ac.signal,
-            onToken: (d) => {
-              buffer += d;
-              if (phase === "generating") {
-                useStore
-                  .getState()
-                  .updateMessage(wsId, assistantId, { content: visibleProse(buffer) });
-              }
-            },
-            onPhase: (p, detail) => {
-              phase = p;
-              if (p === "generating") buffer = "";
-              const status =
-                p === "generating"
-                  ? "streaming"
-                  : p === "building"
-                    ? "building"
-                    : p === "fixing"
-                      ? "fixing"
-                      : "done";
-              useStore
-                .getState()
-                .updateMessage(wsId, assistantId, { status, statusDetail: detail });
-            },
-          },
-        });
-
-        const st = useStore.getState();
-        st.setProduct(wsId, result.files, result.kind);
-        st.snapshotVersion(wsId, request.slice(0, 60) || "build");
-
-        const fileCount = Object.keys(result.files).length;
-        let detail = `${fileCount} file${fileCount === 1 ? "" : "s"} · ${
-          result.kind === "web" ? "web app" : "files"
-        }`;
-        if (result.iterations > 0) detail += ` · auto-fixed ${result.iterations}×`;
-        if (result.remainingErrors.length > 0)
-          detail += ` · ⚠ ${result.remainingErrors.length} issue(s) remain`;
-
-        const note =
-          result.note?.trim() ||
-          (result.remainingErrors.length
-            ? "Built, but with some remaining issues (below)."
-            : "Done.");
-        const content =
-          result.remainingErrors.length > 0
-            ? `${note}\n\nRemaining issues I couldn't fully resolve automatically:\n` +
-              result.remainingErrors.map((e) => `• ${e}`).join("\n")
-            : note;
-
-        st.updateMessage(wsId, assistantId, {
-          content,
-          status: "done",
-          statusDetail: detail,
-        });
-      } catch (err) {
-        const aborted = ac.signal.aborted;
+      const job = await fetchJob(jobId);
+      if (job?.status === "done") {
+        const outcome = mergeFinishedJob(wsId, job);
+        if (allowRuntimeFix && outcome.state === "merged" && outcome.kind === "web") {
+          const errors = await collectPreviewErrors(outcome.files);
+          if (errors.length > 0) {
+            await runRequests(wsId, [composeRuntimeFixRequest(errors)], [], {
+              allowRuntimeFix: false,
+              internalLabel: "Verifying in your browser and fixing runtime errors…",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      const job = await fetchJob(jobId).catch(() => null);
+      if (job?.status === "done") {
+        mergeFinishedJob(wsId, job);
+      } else if (job?.status === "error") {
+        recordFailedJob(wsId, job);
+      } else {
         const message = err instanceof Error ? err.message : String(err);
         useStore.getState().updateMessage(wsId, assistantId, {
-          content: visibleProse(buffer),
           status: "error",
-          statusDetail: aborted ? "Stopped." : message,
+          statusDetail: ac.signal.aborted ? "Stopped." : message,
         });
-        throw err;
-      } finally {
-        abortRef.current = null;
+        useStore.getState().setActiveJob(wsId, null, null);
       }
-    },
-    [],
-  );
+    } finally {
+      abortMap.current.delete(wsId);
+    }
+  }
 
-  const drainQueue = useCallback(
-    async (wsId: string) => {
-      for (;;) {
-        const next = useStore.getState().dequeue(wsId);
-        if (!next) break;
-        await runRequest(wsId, next, []);
-      }
-    },
-    [runRequest],
-  );
+  // Create a background job for one or more requests (stacked adjustments ride
+  // in the same job so the server drains them without the tab being open).
+  async function runRequests(
+    wsId: string,
+    requests: string[],
+    uploaded: UploadedFile[],
+    opts: { allowRuntimeFix: boolean; internalLabel?: string },
+  ): Promise<void> {
+    const s = useStore.getState();
+    const ws = s.workspaces[wsId];
+    if (!ws || requests.length === 0) return;
+
+    // History snapshot BEFORE adding the new user messages (the request text is
+    // sent separately in the job payload).
+    const history = ws.messages;
+
+    if (!opts.internalLabel) {
+      requests.forEach((request, i) => {
+        s.addMessage(wsId, {
+          id: uid("m_"),
+          role: "user",
+          content: request,
+          attachments:
+            i === 0
+              ? uploaded.map((a) => ({
+                  name: a.name,
+                  mime: a.mime,
+                  size: a.size,
+                  isText: a.isText,
+                  note: a.note,
+                }))
+              : undefined,
+          createdAt: Date.now(),
+        } as ChatMessage);
+      });
+    }
+
+    const assistantId = uid("m_");
+    s.addMessage(wsId, {
+      id: assistantId,
+      role: "assistant",
+      content: opts.internalLabel ?? "",
+      status: "streaming",
+      statusDetail: "Starting background job…",
+      createdAt: Date.now(),
+    });
+
+    try {
+      const job = await createGenerationJob({
+        workspaceId: wsId,
+        requests,
+        product: ws.files,
+        attachments: uploaded,
+        history,
+      });
+      useStore.getState().setActiveJob(wsId, job.id, assistantId);
+      await attachToJob(wsId, job.id, assistantId, opts.allowRuntimeFix);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      useStore.getState().updateMessage(wsId, assistantId, {
+        status: "error",
+        statusDetail: message,
+      });
+    }
+  }
 
   const handleSend = useCallback(
     async (text: string, rawFiles: File[]) => {
-      if (running) return;
       let wsId = useStore.getState().activeId;
       if (!wsId) wsId = useStore.getState().createWorkspace();
-      setRunning(true);
+      const ws = useStore.getState().workspaces[wsId];
+      if (!ws || ws.activeJobId) return;
+      setBusy(true);
       try {
         const uploaded = rawFiles.length ? await readUploads(rawFiles) : [];
-        await runRequest(wsId, text, uploaded);
-        await drainQueue(wsId);
-      } catch {
-        /* surfaced in the message */
+        // The stacked queue rides along in the same background job.
+        const requests = [text, ...ws.queue];
+        if (ws.queue.length > 0) useStore.getState().clearQueue(wsId);
+        await runRequests(wsId, requests, uploaded, { allowRuntimeFix: true });
       } finally {
-        setRunning(false);
+        setBusy(false);
       }
     },
-    [running, runRequest, drainQueue],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const handleRunQueue = useCallback(async () => {
-    if (running) return;
     const wsId = useStore.getState().activeId;
     if (!wsId) return;
-    setRunning(true);
+    const ws = useStore.getState().workspaces[wsId];
+    if (!ws || ws.activeJobId || ws.queue.length === 0) return;
+    setBusy(true);
     try {
-      await drainQueue(wsId);
-    } catch {
-      /* surfaced */
+      const requests = [...ws.queue];
+      useStore.getState().clearQueue(wsId);
+      await runRequests(wsId, requests, [], { allowRuntimeFix: true });
     } finally {
-      setRunning(false);
+      setBusy(false);
     }
-  }, [running, drainQueue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On load: sweep every workspace for background jobs that finished (merge
+  // them) or are still running (re-attach so progress resumes in this tab).
+  useEffect(() => {
+    if (!mounted) return;
+    const ids = useStore.getState().order;
+    (async () => {
+      for (const wsId of ids) {
+        try {
+          const outcome = await syncWorkspaceJob(wsId);
+          if (outcome.state === "running") {
+            let msgId = outcome.messageId;
+            const ws = useStore.getState().workspaces[wsId];
+            if (!ws) continue;
+            if (!msgId || !ws.messages.some((m) => m.id === msgId)) {
+              msgId = uid("m_");
+              useStore.getState().addMessage(wsId, {
+                id: msgId,
+                role: "assistant",
+                content: "",
+                status: "streaming",
+                statusDetail: "Reattached to the background job.",
+                createdAt: Date.now(),
+              });
+              useStore.getState().setActiveJob(wsId, outcome.jobId, msgId);
+            }
+            void attachToJob(wsId, outcome.jobId, msgId, true);
+          }
+        } catch {
+          /* per-workspace sync is best-effort */
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   // Generation works if either the server has a key or the user saved one here.
   const online = Boolean(health?.ok || userKey.trim());
@@ -312,7 +369,7 @@ export default function Page() {
               queue={workspace?.queue ?? []}
               onSend={handleSend}
               onQueue={(t) => activeId && useStore.getState().enqueue(activeId, t)}
-              onStop={() => abortRef.current?.abort()}
+              onStop={() => activeId && abortMap.current.get(activeId)?.abort()}
               onRemoveQueued={(i) => activeId && useStore.getState().removeQueued(activeId, i)}
               onRunQueue={handleRunQueue}
             />

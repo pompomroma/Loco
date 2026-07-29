@@ -53,6 +53,11 @@ export interface Workspace {
   versions: ProductVersion[];
   /** Stacked adjustment requests waiting to be applied to the product. */
   queue: string[];
+  /** Server-side background job currently running for this workspace (if any),
+   *  plus the assistant message that displays its progress. Persisted so a
+   *  reopened tab can re-attach and merge results. */
+  activeJobId?: string | null;
+  activeJobMessageId?: string | null;
   createdAt: number;
   updatedAt: number;
 }

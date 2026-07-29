@@ -5,6 +5,10 @@ export interface ApiMessage {
   content: string;
 }
 
+/** Minimal chat-history shape — what buildMessages actually needs. Lets the
+ *  server job engine pass a lightweight history without full ChatMessage. */
+export type HistoryMessage = Pick<ChatMessage, "role" | "content">;
+
 const SYSTEM = `You are Loco, an elite full-stack build agent for "vibe programming".
 You turn a natural-language request (optionally with uploaded files) into a WORKING product.
 
@@ -81,7 +85,7 @@ export function attachmentsContext(attachments: UploadedFile[]): string | null {
  * - attachments: files uploaded with this request
  */
 export function buildMessages(opts: {
-  history: ChatMessage[];
+  history: HistoryMessage[];
   request: string;
   product: FileTree;
   attachments?: UploadedFile[];

@@ -17,10 +17,16 @@ It runs on **NVIDIA's Nemotron** model through the OpenAI-compatible API.
   Everything persists in your browser (localStorage) — no database required.
 - **Any-language generation** — no language whitelist; the model emits a complete
   multi-file project.
-- **Run-until-it-works loop** — for browser products, Loco renders the result in a
-  hidden sandbox, catches runtime/console errors, and feeds them back for an
-  automatic fix pass (capped, so it never loops forever). Residual issues are
-  reported honestly instead of pretending everything works.
+- **Background generation** — every request runs as a **server-side job**, so
+  generation keeps going even if you close the tab, lock your phone, or walk
+  away. When you come back, finished work is merged into the workspace
+  automatically (chat message, product files, version snapshot). Progress shows
+  "Running in background — safe to close this tab" while a job is live.
+- **Run-until-it-works loop** — the server statically validates each build
+  (JS syntax compile, missing-asset checks) and auto-fixes in capped passes;
+  when you're present, the browser additionally runs the product in a hidden
+  sandbox and chains a fix round for any runtime errors it catches. Residual
+  issues are reported honestly instead of pretending everything works.
 - **Stacked adjustments** — queue several change requests and apply them in order
   to the same product; every successful build is snapshotted as a version.
 - **Upload to modify** — attach files (including `.zip` source archives, which are
@@ -31,6 +37,20 @@ It runs on **NVIDIA's Nemotron** model through the OpenAI-compatible API.
   the app: "TOPS" is a hardware-chip metric, not a model property).
 - **No in-app usage limits or paywall.** Upstream Nemotron usage is billed to the
   server's API key.
+
+### Background jobs: what to expect where
+
+- **Persistent Node server** (GitHub Codespace, VPS, `pnpm start`/`pnpm dev`
+  anywhere): full support. Jobs run to completion regardless of the browser;
+  finished results are persisted to `data/jobs/` and picked up when you return.
+- **Vercel serverless**: best-effort. The jobs route asks the platform to keep
+  the instance alive (`after()`, up to `maxDuration` = 300s), but very long jobs
+  can be cut off, and results may not survive across instances. The UI detects a
+  stalled/vanished job and tells you to resend rather than spinning forever.
+- **Your API key is never written to disk.** A job interrupted by a server
+  restart cannot resume (the key was memory-only) and is marked accordingly.
+- Results are merged into the browser profile that owns the workspace
+  (workspaces live in localStorage), so return on the same browser/device.
 
 ### Honest scope / not-yet
 
